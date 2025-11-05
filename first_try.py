@@ -12,6 +12,7 @@ st.set_page_config(page_title="Image Text Extractor - Gemini", layout="wide")
 st.title("🧠 Gemini Vision Extractor")
 st.write("Upload multiple advertisement images to extract structured information in JSON format and download all results in a single Excel file.")
 
+# --- API Key ---
 api_key = (
     os.getenv("GENAI_API_KEY")
     or os.getenv("GEMINI_API_KEY")
@@ -19,45 +20,46 @@ api_key = (
     or os.getenv("API_KEY")
 )
 
-api_key = api_key
-
 MODEL_NAME = "gemini-2.5-flash"
 
-prompt = """**Analyze the provided image of the advertisement sign. Extract all text and organize it into the following structured JSON format. Ensure all contact numbers and location details are accurately captured.**
+# --- Updated Prompt for Multiple Hostel Posters ---
+prompt = """You are analyzing an advertisement image that may contain one or multiple hostel posters. 
+For each distinct hostel advertisement visible, extract details in the following JSON format. 
+If multiple hostels are found, return an array of objects — one per hostel. Ensure all contact numbers and 
+location details are accurately captured.
 
-```json
-{
-  "EstablishmentType": "...",
-  "HostelName": "...",
-  "LocationDetails": {
-    "Landmark1": "...",
-    "Landmark2": "..."
-  },
-  "KeyService": "...",
-  "AccommodationOptions": "...",
-  "ContactNumbers": [
-    "...",
-    "...",
-    "..."
-  ]
-}
-```"""
+Return ONLY valid JSON (no explanations, no markdown).
+
+Expected structure:
+[
+  {
+    "EstablishmentType": "...",
+    "HostelName": "...",
+    "LocationDetails": {
+      "Landmark1": "...",
+      "Landmark2": "..."
+    },
+    "KeyService": "...",
+    "AccommodationOptions": "...",
+    "ContactNumbers": [
+      "...",
+      "...",
+      "..."
+    ]
+  }
+]
+"""
 
 # --- File Upload ---
 uploaded_images = st.file_uploader("📤 Upload Advertisement Images", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 
 if uploaded_images and api_key:
-    # Display uploaded images (updated parameter)
-    # st.image(uploaded_images, caption=[img.name for img in uploaded_images], use_container_width=True)
-
-    # Initialize the client
     try:
         client = genai.Client(api_key=api_key)
     except Exception as e:
         st.error(f"Error initializing Gemini client: {e}")
         st.stop()
 
-    # Generate button
     if st.button("🚀 Extract Text from All Images"):
         all_data = []
 
@@ -73,22 +75,25 @@ if uploaded_images and api_key:
                     )
 
                     clean_text = re.sub(r"^```(?:json)?|```$", "", response.text, flags=re.MULTILINE).strip()
+
+                    # Parse as JSON (can be list or single object)
                     parsed = json.loads(clean_text)
+                    if isinstance(parsed, dict):
+                        parsed = [parsed]  # normalize single to list
 
-                    # Flatten nested JSON
-                    flat_data = {
-                        "EstablishmentType": parsed.get("EstablishmentType", ""),
-                        "HostelName": parsed.get("HostelName", ""),
-                        "Landmark1": parsed.get("LocationDetails", {}).get("Landmark1", ""),
-                        "Landmark2": parsed.get("LocationDetails", {}).get("Landmark2", ""),
-                        "KeyService": parsed.get("KeyService", ""),
-                        "AccommodationOptions": parsed.get("AccommodationOptions", ""),
-                        "ContactNumbers": ", ".join(parsed.get("ContactNumbers", []))
-                    }
+                    for entry in parsed:
+                        flat_data = {
+                            "EstablishmentType": entry.get("EstablishmentType", ""),
+                            "HostelName": entry.get("HostelName", ""),
+                            "Landmark1": entry.get("LocationDetails", {}).get("Landmark1", ""),
+                            "Landmark2": entry.get("LocationDetails", {}).get("Landmark2", ""),
+                            "KeyService": entry.get("KeyService", ""),
+                            "AccommodationOptions": entry.get("AccommodationOptions", ""),
+                            "ContactNumbers": ", ".join(entry.get("ContactNumbers", []))
+                        }
+                        all_data.append(flat_data)
 
-                    all_data.append(flat_data)
-
-                    st.success(f"✅ Extracted data from: {uploaded_image.name}")
+                    st.success(f"✅ Extracted {len(parsed)} hostel(s) from: {uploaded_image.name}")
 
                 except Exception as e:
                     st.warning(f"⚠️ Failed to process {uploaded_image.name}: {e}")
@@ -112,8 +117,5 @@ if uploaded_images and api_key:
             )
         else:
             st.error("No valid data was extracted from the uploaded images.")
-
 else:
     st.info("👆 Upload one or more images to start.")
-
-
